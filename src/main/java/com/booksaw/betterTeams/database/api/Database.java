@@ -5,7 +5,10 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.Arrays;
 
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.ConfigurationSection;
 
@@ -28,7 +31,8 @@ public class Database {
 	private String user;
 	private String password;
 
-	Connection connection;
+	//Connection connection;
+	HikariDataSource ds;
 
 	/**
 	 * Used to setup a connection from the provided data
@@ -56,10 +60,13 @@ public class Database {
 		Bukkit.getLogger().info("[BetterTeams] Attempting to connect to database");
 
 		try {
-			connection = DriverManager.getConnection(
-					"jdbc:mysql://" + host + ":" + port + "/" + database + "?autoReconnect=true&useSSL=false", user,
-					password);
-			testDataSource();
+			HikariConfig config = new HikariConfig();
+			config.setJdbcUrl("jdbc:mysql://" + host + ":" + port + "/" + database + "?useSSL=false");
+			config.setUsername(user);
+			config.setPassword(password);
+
+			ds = new HikariDataSource(config);
+			//testDataSource();
 
 		} catch (Exception e) {
 			database = null;
@@ -91,7 +98,7 @@ public class Database {
 	 * more permanent solution. A popular library is HikariCP
 	 * (https://github.com/brettwooldridge/HikariCP)
 	 */
-	private void resetConnection() {
+	/*private void resetConnection() {
 		if (connection == null) {
 			throw new IllegalStateException("No SQL connection has been established");
 		}
@@ -107,6 +114,16 @@ public class Database {
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
+	}*/
+
+	public Connection getConnection() {
+		System.out.println("getConnection");
+		try {
+			return ds.getConnection();
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return null;
+		}
 	}
 
 	/**
@@ -115,20 +132,18 @@ public class Database {
 	 * @throws SQLException If a connection cannot be established, this error will
 	 *                      be thrown
 	 */
-	private void testDataSource() throws Exception {
+	/*private void testDataSource() throws Exception {
 		if (connection == null || connection.isClosed()) {
 			throw new Exception("SQL connection is not setup correctly");
 		}
-	}
+	}*/
 
 	/**
 	 * Used to close the connection to the database
 	 */
 	public void closeConnection() {
 		try {
-			if (connection != null && !connection.isClosed()) {
-				connection.close();
-			}
+			ds.close();
 		} catch (Exception e) {
 			Bukkit.getLogger().severe("[BetterTeams] There was an error closing the database connection");
 			e.printStackTrace();
@@ -142,23 +157,14 @@ public class Database {
 	 * @param placeholders The placeholders for the statement
 	 */
 	public void executeStatement(String statement, String... placeholders) {
-
+		System.out.println("executeStatement");
 		for (int i = 0; i < placeholders.length; i++) {
 			statement = statement.replaceFirst("\\?", placeholders[i]);
 		}
 
 		statement = statement.replace("'false'", "false");
 		statement = statement.replace("'true'", "true");
-
-		try {
-			if (!connection.isValid(2)) {
-				resetConnection();
-			}
-		} catch (SQLException e) {
-			// this error is never thrown as the timeout is > 0
-		}
-
-		try (PreparedStatement ps = connection.prepareStatement(statement)) {
+		try (PreparedStatement ps = getConnection().prepareStatement(statement)) {
 //			System.out.println("executing: " + ps.toString());
 			ps.executeUpdate();
 			//Shouldn't have negative impact, just need to figure out why it is marked as redundant.
@@ -178,15 +184,14 @@ public class Database {
 	 * @return The results of the query
 	 */
 	public PreparedStatement executeQuery(String query, String... placeholders) {
+		System.out.println("executeQuery query:" + query);
 		for (int i = 0; i < placeholders.length; i++) {
+			System.out.println("placeholders[i]: " + placeholders[i]);
 			query = query.replaceFirst("\\?", placeholders[i]);
 		}
 
 		try {
-			if (!connection.isValid(2)) {
-				resetConnection();
-			}
-			PreparedStatement ps = connection.prepareStatement(query, ResultSet.TYPE_SCROLL_SENSITIVE,
+			PreparedStatement ps = getConnection().prepareStatement(query, ResultSet.TYPE_SCROLL_SENSITIVE,
 					ResultSet.CONCUR_UPDATABLE);
 //			System.out.println("executing: " + ps.toString());
 			return ps;
